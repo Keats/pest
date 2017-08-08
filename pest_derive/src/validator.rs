@@ -78,6 +78,14 @@ pub fn validate_pairs<I: Input>(pairs: Pairs<GrammarRule, I>) -> Vec<Ident> {
     pest_keywords.insert("pop");
     pest_keywords.insert("push");
     pest_keywords.insert("soi");
+    pest_keywords.insert("minus");
+    pest_keywords.insert("plus");
+    pest_keywords.insert("sign");
+    pest_keywords.insert("digit");
+    pest_keywords.insert("int");
+    pest_keywords.insert("integer");
+    pest_keywords.insert("exp");
+
 
     let mut predefined = HashSet::new();
     predefined.insert("any");
@@ -85,6 +93,13 @@ pub fn validate_pairs<I: Input>(pairs: Pairs<GrammarRule, I>) -> Vec<Ident> {
     predefined.insert("peek");
     predefined.insert("pop");
     predefined.insert("soi");
+    predefined.insert("minus");
+    predefined.insert("plus");
+    predefined.insert("sign");
+    predefined.insert("digit");
+    predefined.insert("int");
+    predefined.insert("integer");
+    predefined.insert("exp");
 
     let definitions: Vec<_> = pairs.clone()
                                    .filter(|pair| pair.as_rule() == GrammarRule::grammar_rule)

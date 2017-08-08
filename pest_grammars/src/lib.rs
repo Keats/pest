@@ -17,3 +17,4 @@ pub mod toml {
     #[grammar = "grammars/toml.pest"]
     pub struct TomlParser;
 }
+

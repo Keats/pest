@@ -11,53 +11,100 @@ use quote::{Ident, Tokens};
 
 use super::ast::*;
 
+macro_rules! add_builtin {
+    ($predefined: expr, $name: ident, $pattern: expr) => {
+        $predefined.insert(stringify!($name), quote! {
+            fn $name<I: pest::inputs::Input>(
+                pos: pest::inputs::Position<I>,
+                _: &mut pest::ParserState<Rule, I>
+            ) -> Result<pest::inputs::Position<I>, pest::inputs::Position<I>> {
+                $pattern
+            }
+        });
+    };
+    // Adding another version to use the `state` argument, which would
+    // trigger a unused warning otherwise
+    ($predefined: expr, $name: ident, $pattern: expr, $use_state: expr) => {
+        $predefined.insert(stringify!($name), quote! {
+            fn $name<I: pest::inputs::Input>(
+                pos: pest::inputs::Position<I>,
+                state: &mut pest::ParserState<Rule, I>
+            ) -> Result<pest::inputs::Position<I>, pest::inputs::Position<I>> {
+                $pattern
+            }
+        });
+    };
+}
+
 pub fn generate(name: Ident, rules: Vec<Rule>, defaults: Vec<Ident>) -> Tokens {
     let mut predefined = HashMap::new();
-    predefined.insert("any", quote! {
-        fn any<I: pest::inputs::Input>(
-            pos: pest::inputs::Position<I>,
-            _: &mut pest::ParserState<Rule, I>
-        ) -> Result<pest::inputs::Position<I>, pest::inputs::Position<I>> {
-            pos.skip(1)
-        }
-    });
-    predefined.insert("eoi", quote! {
-        fn eoi<I: pest::inputs::Input>(
-            pos: pest::inputs::Position<I>,
-            _: &mut pest::ParserState<Rule, I>
-        ) -> Result<pest::inputs::Position<I>, pest::inputs::Position<I>> {
-            pos.at_end()
-        }
-    });
-    predefined.insert("peek", quote! {
-        fn peek<I: pest::inputs::Input>(
-            pos: pest::inputs::Position<I>,
-            state: &mut pest::ParserState<Rule, I>
-        ) -> Result<pest::inputs::Position<I>, pest::inputs::Position<I>> {
-            let string = state.stack.last().expect("peek was called on empty stack").capture();
+    add_builtin!(predefined, any, pos.skip(1));
+    add_builtin!(predefined, eoi, pos.at_end());
+    add_builtin!(predefined, soi, pos.at_start());
+    add_builtin!(predefined, plus, pos.match_string("+"));
+    add_builtin!(predefined, minus, pos.match_string("-"));
+    add_builtin!(predefined, digit, pos.match_range('0'..'9'));
 
-            pos.match_string(string)
-        }
-    });
-    predefined.insert("pop", quote! {
-        fn pop<I: pest::inputs::Input>(
-            pos: pest::inputs::Position<I>,
-            state: &mut pest::ParserState<Rule, I>
-        ) -> Result<pest::inputs::Position<I>, pest::inputs::Position<I>> {
-            let span = state.stack.pop().expect("pop was called on empty stack");
-            let string = span.capture();
+    // and the ones that require state
+    add_builtin!(predefined, peek, {
+        let string = state.stack.last().expect("peek was called on empty stack").capture();
+        pos.match_string(string)
+    }, true);
+    add_builtin!(predefined, pop, {
+        let span = state.stack.pop().expect("pop was called on empty stack");
+        let string = span.capture();
 
-            pos.match_string(string)
-        }
-    });
-    predefined.insert("soi", quote! {
-        fn soi<I: pest::inputs::Input>(
-            pos: pest::inputs::Position<I>,
-            _: &mut pest::ParserState<Rule, I>
-        ) -> Result<pest::inputs::Position<I>, pest::inputs::Position<I>> {
-            pos.at_start()
-        }
-    });
+        pos.match_string(string)
+    }, true);
+    add_builtin!(predefined, sign, {
+        state.rule(Rule::sign, pos, |state, pos| {
+            self::plus(pos, state).or_else(|pos| self::minus(pos, state))
+        })
+    }, true);
+    add_builtin!(predefined, int, {
+        state.rule(Rule::int, pos, |state, pos| {
+            state.atomic(true, move |state| {
+                pos.match_string("0")
+                    .or_else(|pos| {
+                        state.sequence(move |state| {
+                            pos.sequence(|pos| {
+                                pos.match_range('1'..'9')
+                                    .and_then(|pos| {
+                                        pos.optional(|pos| {
+                                            self::digit(pos, state)
+                                        })
+                                    })
+                            })
+                        })
+                    })
+            })
+        })
+    }, true);
+    add_builtin!(predefined, exp, {
+        state.rule(Rule::exp, pos, |state, pos| {
+            state.atomic(true, move |state| {
+                state.sequence(move |state| {
+                    pos.sequence(|pos| {
+                        pos.match_string("E")
+                            .or_else(|pos| pos.match_string("e"))
+                            .and_then(|pos| pos.optional(|pos| self::sign(pos, state)))
+                            .and_then(|pos| self::int(pos, state))
+                    })
+                })
+            })
+        })
+    }, true);
+    add_builtin!(predefined, integer, {
+        state.atomic(true, move |state| {
+            state.sequence(move |state| {
+                pos.sequence(|pos| {
+                    pos.optional(|pos| self::sign(pos, state))
+                        .and_then(|pos| self::int(pos, state))
+                })
+            })
+        })
+    }, true);
+
 
     let rule_enum = generate_enum(&rules);
     let patterns = generate_patterns(&rules);

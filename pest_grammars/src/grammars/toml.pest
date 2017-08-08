@@ -53,12 +53,8 @@ time_second  = @{ digit ~ digit }
 time_secfrac = @{ "." ~ digit+ }
 time_offset  = ${ "Z" | ("+" | "-") ~ time_hour ~ ":" ~ time_minute }
 
-integer = @{ ("+" | "-")? ~ int }
 float   = @{ ("+" | "-")? ~ int ~ ("." ~ digits ~ exp? | exp)? }
-int     = @{ "0" | ('1'..'9' ~ digits?) }
 digits  = @{ (digit | ("_" ~ digit))+ }
-digit   =  { '0'..'9' }
-exp     = @{ ("E" | "e") ~ ("+" | "-")? ~ int }
 
 boolean = { "true" | "false" }
 
