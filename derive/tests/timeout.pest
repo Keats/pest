@@ -1,0 +1,100 @@
+// https://github.com/pest-parser/pest/issues/402
+// Extracted from Tera grammar
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+
+/// LITERALS
+int   = @{ "-" ? ~ ("0" | '1'..'9' ~ '0'..'9' * ) }
+float = @{
+    "-" ? ~
+    (
+        "0" ~ "." ~ '0'..'9' + |
+        '1'..'9' ~ '0'..'9' * ~ "." ~ '0'..'9' +
+    )
+}
+// matches anything between 2 double quotes
+double_quoted_string  = @{ "\"" ~ (!("\"") ~ ANY)* ~ "\""}
+// matches anything between 2 single quotes
+single_quoted_string  = @{ "\'" ~ (!("\'") ~ ANY)* ~ "\'"}
+// matches anything between 2 backquotes\backticks
+backquoted_quoted_string  = @{ "`" ~ (!("`") ~ ANY)* ~ "`"}
+
+string = @{
+    double_quoted_string |
+    single_quoted_string |
+    backquoted_quoted_string
+}
+
+boolean = { "true" | "false" | "True" | "False" }
+
+// -----------------------------------------------
+
+/// OPERATORS
+op_or        = @{ "or" ~ WHITESPACE }
+op_and       = @{ "and" ~ WHITESPACE }
+op_not       = @{ "not" ~ WHITESPACE }
+op_lte       = { "<=" }
+op_gte       = { ">=" }
+op_lt        = { "<" }
+op_gt        = { ">" }
+op_eq        = { "==" }
+op_ineq      = { "!=" }
+op_plus      = { "+" }
+op_minus     = { "-" }
+op_times     = { "*" }
+op_slash     = { "/" }
+op_modulo    = { "%" }
+
+// -------------------------------------------------
+
+/// Idents
+
+all_chars = _{'a'..'z' | 'A'..'Z' | "_" | '0'..'9'}
+// Used everywhere where an ident is used, except when accessing
+// data from the context.
+// Eg block name, argument name, macro name etc
+ident = @{
+    ('a'..'z' | 'A'..'Z' | "_") ~
+    all_chars*
+}
+
+// The context_ident used to get data from the context.
+// Same as ident but allows `.` in it
+dotted_ident = @{
+    ('a'..'z' | 'A'..'Z' | "_") ~
+    all_chars* ~
+    ("." ~ all_chars+)*
+}
+
+string_concat = { (fn_call | float | int | string | ident) ~ ("~" ~ (fn_call | float | int | string | ident))+ }
+
+// ----------------------------------------------------
+
+/// EXPRESSIONS
+/// We'll use precedence climbing on those in the parser phase
+
+// boolean first so they are not caught as identifiers
+basic_val  = _{ boolean | fn_call | ident | float | int }
+basic_op   = _{ op_plus | op_minus | op_times | op_slash | op_modulo }
+basic_expr = { ("(" ~ basic_expr ~ ")" | basic_val) ~ (basic_op ~ basic_val)* }
+basic_expr_filter = !{ basic_expr ~ filter* }
+string_expr_filter = !{ (string_concat | string) ~ filter* }
+
+comparison_val  = { basic_expr_filter ~ (basic_op ~ basic_expr_filter)* }
+comparison_op   = _{ op_lte | op_gte | op_gt | op_lt | op_eq | op_ineq }
+comparison_expr = { (string_expr_filter | comparison_val) ~ (string_expr_filter ~ (comparison_val | comparison_val))? }
+
+logic_val  = !{ op_not? ~ comparison_expr }
+logic_expr = !{ logic_val ~ ((op_or | op_and) ~ logic_val)* }
+
+array = !{ "[" ~ (logic_val ~ ",")* ~ logic_val? ~ "]"}
+
+// ----------------------------------------------------
+
+/// FUNCTIONS & FILTERS
+
+// A keyword argument: something=10, something="a value", something=1+10 etc
+kwarg   = { ident ~ "=" ~ (logic_val | array) }
+kwargs  = _{ kwarg ~ ("," ~ kwarg )* }
+fn_call = { ident ~ "(" ~ kwargs? ~ ")" }
+filter  = { "|" ~ (fn_call | ident) }
+
